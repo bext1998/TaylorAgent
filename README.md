@@ -17,13 +17,6 @@ V1 不實作 Manager LLM、Subagent Framework、自製 Agent Runtime、完整 Re
 
 Taylor 採 Wails v2 桌面應用：Go control service 是唯一的 OS capability broker 與 process supervisor；WebView 只呈現狀態並送出使用者意圖。Agent 執行預設委派給 Taylor Core（codename: Brunel），其內部由 Go Host + Pi Agent 構成。Taylor Core 整合須通過 Gate 1 稽核後才能成為 V1 自主 Run 閉環的基礎。
 
-## 重要規則
-
-- 所有 Git Worktree 必須位於 `D:\AgentCoding\.codex\worktrees\TaylorAgent`。
-- Worktree 分支名稱必須為 `maze/YYYY-MM-DD-short-hash`；隨機短雜湊後不得附加其他字樣。
-- V1 的破壞性操作由程式層安全政策裁決，Agent 不得自行提權。
-- GitHub Issue 使用 spec-to-issues；專案沒有 CI 時，Issue 不加入額外驗收條件、spec revision 或驗證碼。
-
 ## 文件
 
 - [V1 規格](docs/taylor-agent-v1-spec.md)
