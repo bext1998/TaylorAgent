@@ -6,7 +6,7 @@
 
 ## 專案概述
 
-Taylor Agent 是 Windows 桌面 Coding Agent 控制平面，以 Session、Task Board 與 Scheduled Task 管理 Brunel 執行的 Agent 工作。
+Taylor Agent 是 Windows 桌面 Agent 工作控制平面：以 Session、Task Board 與 Scheduled Task 管理工作；實際 Agent 執行委派給 Taylor Core（codename: Brunel）。
 
 技術棧：Go + Wails v2 + TypeScript/WebView；持久化方案待 Gate 與 Product Owner 凍結。
 

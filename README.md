@@ -1,6 +1,6 @@
 # Taylor Agent
 
-Taylor Agent 是 Windows 桌面 Coding Agent 控制平面。它以 Session、Task Board 與 Scheduled Task 管理工作，並由程式邏輯統一處理 Run 生命週期、Git Worktree、安全權限、復原點與工作歷史。
+Taylor Agent 是 Windows 桌面 Agent 工作控制平面：以 Session、Task Board 與 Scheduled Task 管理工作，並由程式邏輯統一處理 Run 生命週期、Git Worktree、安全權限、復原點與工作歷史；實際 coding 執行委派給 Taylor Core（codename: Brunel）。
 
 ## V1 範圍
 
@@ -15,7 +15,7 @@ V1 不實作 Manager LLM、Subagent Framework、自製 Agent Runtime、完整 Re
 
 ## 架構
 
-Taylor 採 Wails v2 桌面應用：Go control service 是唯一的 OS capability broker 與 process supervisor；WebView 只呈現狀態並送出使用者意圖。Agent 執行預設委派給 Brunel，Brunel 再管理 Pi runtime。Brunel 整合須通過 Gate 1 稽核後才能成為 V1 自主 Run 閉環的基礎。
+Taylor 採 Wails v2 桌面應用：Go control service 是唯一的 OS capability broker 與 process supervisor；WebView 只呈現狀態並送出使用者意圖。Agent 執行預設委派給 Taylor Core（codename: Brunel），其內部由 Go Host + Pi Agent 構成。Taylor Core 整合須通過 Gate 1 稽核後才能成為 V1 自主 Run 閉環的基礎。
 
 ## 重要規則
 
@@ -34,7 +34,7 @@ Taylor 採 Wails v2 桌面應用：Go control service 是唯一的 OS capability
 
 ## 動工前 Gate
 
-1. Gate 1：稽核 Brunel 的 policy hook、最小 Run lifecycle、取消、Steering、IPC、秘密保護與受控網路能力。
+1. Gate 1：稽核 Taylor Core（Brunel）的 policy hook、最小 Run lifecycle、取消、Steering、IPC、秘密保護與受控網路能力。
 2. Gate 2：蒐集目標使用者、One-time／Recurring 排程與 N>1 並行需求。
 
 ## License

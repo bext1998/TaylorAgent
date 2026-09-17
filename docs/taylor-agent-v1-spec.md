@@ -25,7 +25,9 @@
 
 ### 1.1 產品一句話
 
-Taylor Agent 是一個 **Windows 桌面 Coding Agent 控制平面**：以 Session 作為人機互動單位、以 Task Board 管理非同步工作、以 Scheduled Task 處理自動排程，由軟體邏輯統一管理 Agent 執行、Git Worktree、安全權限、長程上下文與工作歷史。Agent 的實際執行委派給執行層 Brunel；Taylor 不設 Manager LLM，orchestration 由程式邏輯負責。**[願景]**
+Taylor Agent 是一個 **Windows 桌面 Agent 工作控制平面**：Task、Schedule 與 Run 的生命週期、權限邊界、Git 基線與可復原點、完成證據與人工核准，全部由 Taylor Agent 自己擁有並持久化，以 Session 作為人機互動單位、以 Task Board 管理非同步工作、以 Scheduled Task 處理自動排程。Taylor Agent 本身不執行 coding——實際的 Agent 執行委派給 **Taylor Core**（codename: Brunel），它是被 Taylor Agent 管理與約束的那一側；Taylor 不設 Manager LLM，orchestration 由程式邏輯負責。**[願景]**
+
+**產品分層與命名**：Legacy Taylor／Taylor-Kanban（`bext1998/Taylor-Kanban`，舊產品前身，累積了 Task Board／工作管理／AI 協作概念，但**非**本專案的程式碼基底）→ **Taylor Agent**（本 repo，`bext1998/TaylorAgent`，重新實作，控制平面）→ 使用 → **Taylor Core**（codename: Brunel，repo 仍為 `bext1998/brunel`，Agent execution core；內部由 Go Host + Pi Agent 共同構成，細節見 §6）。「Brunel」僅作 Taylor Core 的 codename／repo 歷史名稱，不是與 Taylor Agent 並列的獨立產品。**[規範]**
 
 ### 1.2 本規格涵蓋
 
@@ -35,7 +37,7 @@ Taylor Agent **V1（首個正式版本）** 的範圍、資料模型、執行與
 
 - Brunel 內部設計（見 Brunel 專案 `docs/spec.md`）。
 - Pi 內部設計（見 https://github.com/earendil-works/pi）。
-- Palladio 設計系統內部（見 Palladio 專案）。
+- shadcn/ui 元件原始碼與 Radix Primitives 內部設計（見各自上游文件；§13.1）。
 - V1 之後的功能（Recurring 全叢集、Retrieval 子系統、多工作並行 N>1、Event Trigger、Cloud/Remote Execution、Multi-repo 等；見 §4.3、產品基準 §30）。
 - 線框圖（wireframes）與具體畫面設計 —— Product Owner 尚未開始，見 §13。
 
@@ -45,11 +47,12 @@ Taylor Agent **V1（首個正式版本）** 的範圍、資料模型、執行與
 
 | 代號 | 文件 | 角色 |
 | --- | --- | --- |
-| ADR-AGORA-001 | `docs/001-taylor-core-scope.md`（本專案內副本） | **V1 範圍的規範來源** |
+| ADR-AGORA-001 | `docs/001-taylor-core-scope.md`（本專案內副本） | **V1 範圍的規範來源**；文件本身已 CLOSED 定稿，內文沿用舊稱「Brunel」，等同本文件的 TAYLOR CORE，不回頭修改該 ADR |
 | BASELINE | 《Taylor Agent 產品基準》34 節 | 願景來源；對照表見附錄 A |
-| BRUNEL | https://github.com/bext1998/brunel ‧ 本機 `D:\AgentCoding\Brunel` | 執行層；目前 Alpha 1 實作中 |
-| PI | https://github.com/earendil-works/pi | Brunel 委派的 model-facing agent runtime |
-| PALLADIO | https://bext1998.github.io/palladio-design-language-system/ ‧ 本機 `D:\AgentCoding\PalladioDesignLanguageSystem` | 設計語言與 design-token 系統；Foundation 已完成，元件進行中 |
+| TAYLOR CORE | https://github.com/bext1998/brunel（codename: Brunel）‧ 本機 `D:\AgentCoding\Brunel` | Agent execution core；內部由 Go Host + Pi Agent 構成；目前 Alpha 1 實作中 |
+| PI | https://github.com/earendil-works/pi | Taylor Core（codename: Brunel）採用的 model-facing Agent Runtime 基底，非獨立產品層（ADR-002） |
+| SHADCN | https://ui.shadcn.com | 元件原始碼來源（CLI 複製進 repo，非 npm 套件）；Tailwind-based，視覺層與 token 消費方式見 §13.1 |
+| RADIX | https://www.radix-ui.com/primitives | React-only 無障礙互動 primitives（focus／keyboard／ARIA）；shadcn/ui 元件的互動邏輯基礎，一併決定前端框架為 React（§13.1） |
 
 ---
 
@@ -65,7 +68,7 @@ Taylor Agent **V1（首個正式版本）** 的範圍、資料模型、執行與
 
 ### 3.2 核心原則 **[願景]**
 
-- Taylor 管理工作；Brunel 負責 Agent 執行；軟體邏輯負責 orchestration；不讓 Manager LLM 控制整個系統。
+- Taylor Agent 管理工作；Taylor Core（codename: Brunel）負責 Agent 執行；軟體邏輯負責 orchestration；不讓 Manager LLM 控制整個系統。
 - 技術可行 ≠ 產品需要（Feature Freeze，見 §12）。
 - Work-level Parallelism 為架構設計前提，但非「Manager Agent 管理多個 Agent」。
 
@@ -81,7 +84,7 @@ Taylor Agent **V1（首個正式版本）** 的範圍、資料模型、執行與
 
 1. **Session Mode**：對話式 coding 工作。
 2. **Task Board**：三欄看板（待辦／執行中／已完成待審），「拖曳到執行中」＝啟動命令，不另跳 Start／Confirm 對話框。
-3. **手動 Task → Run → Worktree → Brunel → Completion Evidence → 人工 Review** 的最小可恢復閉環。
+3. **手動 Task → Run → Worktree → Taylor Core（Brunel）→ Completion Evidence → 人工 Review** 的最小可恢復閉環。
 4. **自主 Run 並行硬上限 = 1**（Interactive Session 可與 1 個背景 Task Run 並存）。放寬至 2 須先有 Gate 2 需求證據 + 隔離／取消／資源可重現證明，且**不可由 Agent 或一般設定調高**。
 5. **Permission Policy Engine（程式層）**：Allow／Ask／Deny/Confirm 四檔；Protected Paths；未分類工具預設 Deny；Agent 不得自行提權；權限綁定於 Run／專案預設而非永久全域。破壞性操作凍結 denylist 見 §7.2。
 6. **單一 Checkpoint 機制**：Task Run 必在 Worktree；以該 Worktree 的 Git 可復原點作為 Checkpoint。不做 stash／file-snapshot 子系統，Agent 不得自呼 `git reset --hard` 復原。見 §10。
@@ -99,7 +102,7 @@ Taylor Agent **V1（首個正式版本）** 的範圍、資料模型、執行與
 | 項目 | 說明 | 恢復／重議條件 |
 | --- | --- | --- |
 | 完整 Recurring Scheduled Task | Task Definition／Run 分離、雙卡看板呈現、跨 Run Task Memory、Completion Policy 三層 | Gate 2 需求探測顯示需要；**須另立新議題與新投票**，不由 Gate 結果自動核准 |
-| Retrieval pipeline / Universal-style Memory | §18／§19／§20 的 Taylor 側歷史組織、語意檢索、跨 Task 偏好推論 | 觀察到具體失敗（Active Context 爆掉且 Brunel compaction 無法召回）；另立議題 |
+| Retrieval pipeline / Universal-style Memory | §18／§19／§20 的 Taylor 側歷史組織、語意檢索、跨 Task 偏好推論 | 觀察到具體失敗（Active Context 爆掉且 Taylor Core compaction 無法召回）；另立議題 |
 | 自動 Retry / Pause / Resume | 執行中 Agent 的可恢復暫停與自動重試 | Gate 1 證明 runtime 契約 + 冪等分類；另立議題 |
 | N>1 Work-level Parallelism | 多個自主 Run 併發 | Gate 2 需求證據 + Gate 1 隔離／取消／資源證明 |
 | Resource Governor 優先權階級 | Interactive/Manual/Scheduled 三級優先與 per-mode worker 配額 | 本機實際被並行跑飽後再做 |
@@ -107,7 +110,7 @@ Taylor Agent **V1（首個正式版本）** 的範圍、資料模型、執行與
 | Task Dependencies | `BLOCKED_BY` 關係 | 後續階段；V1 Board UI 不預留依賴視覺化 |
 | Event Trigger（GitHub Issue/PR、CI failure、Webhook、Git push） | 事件觸發排程 | 後續；資料模型保留 Generic Trigger（Manual/Schedule/Event） |
 
-### 4.3 V1 移除（不進 Taylor Core） **[規範 / 願景]**
+### 4.3 V1 移除（不進 V1 範圍） **[規範 / 願景]**
 
 依產品基準 §29：Subagent Framework、Agent Swarm、Manager/Planner Agent、固定 Agent Team、Taylor 自製 Model Provider／Agent Loop／Tool Runtime／Skill Runtime／Subagent Runtime、Skill/Agent Marketplace、Voice Control、Persona System、Image Generation、自製 Browser Agent／Computer Use／MCP 生態、大量內建第三方 Integration、Autonomous Production Deployment、Autonomous Merge。
 
@@ -123,10 +126,10 @@ Taylor Agent **V1（首個正式版本）** 的範圍、資料模型、執行與
 | --- | --- | --- |
 | **Session** | 使用者與 Agent 的一段互動 | 可獨立存在（`Task = null`, `Run = null`）；也是所有背景 Run 的人工介入介面（Needs Input 時點入即進該 Run 的 Session） |
 | **Task** | 需要持續管理、追蹤或排程的工作 | 由使用者建立，或由 Session 轉換而來（抽取 Goal／Relevant context／Constraints／Repository／Important decisions／Source Session reference，不塞整份 Session） |
-| **Run** | Agent 對某個 Task 的一次實際執行 | Immutable record；擁有自己的 Worktree identity、base revision、Brunel session 參照、Evidence、Checkpoint 參照、狀態時間軸。Retry／Request Changes **預設建立新 Run**，原 Run 永不覆寫 |
+| **Run** | Agent 對某個 Task 的一次實際執行 | Immutable record；擁有自己的 Worktree identity、base revision、Taylor Core session 參照、Evidence、Checkpoint 參照、狀態時間軸。Retry／Request Changes **預設建立新 Run**，原 Run 永不覆寫 |
 | **Trigger** | Run 的觸發方式 | Generic：`Manual` / `Schedule` / `Event`。V1 僅 `Manual`；`Schedule` 依 §8 結果決定是否可執行；`Event` 僅保留型別 |
 
-關係：`Task 1—N Run`，`Run 1—1 Session`（每個 Run 可對應自己的 Brunel/Agent Session）。普通 Session 可無 Task 無 Run。
+關係：`Task 1—N Run`，`Run 1—1 Session`（每個 Run 可對應自己的 Taylor Core/Agent Session）。普通 Session 可無 Task 無 Run。
 
 ### 5.2 Run 狀態機 **[待 PO 凍結 / 待 Gate 1]**
 
@@ -140,13 +143,13 @@ V1 不做記憶子系統。Run 之間只透過有限、可追溯的 handoff sche
 
 ### 5.4 持久化 **[待 Gate 1]**
 
-Taylor 側需持久化：Run lifecycle、runtime/tool event 摘要、failure reason、completion evidence、baseline reference、policy decision journal（見 §7.6）。儲存後端 [待 PO 凍結]（候選：SQLite）。Brunel 側 session 以 Brunel 自己的 `events.jsonl` 為準（Pi session 停用）——Taylor 讀取契約待 Gate 1。
+Taylor 側需持久化：Run lifecycle、runtime/tool event 摘要、failure reason、completion evidence、baseline reference、policy decision journal（見 §7.6）。儲存後端 [待 PO 凍結]（候選：SQLite）。Taylor Core（Brunel）側 session 以其自己的 `events.jsonl` 為準（Pi session 停用）——Taylor 讀取契約待 Gate 1。
 
 ---
 
-## 6. 執行層與 Brunel 整合
+## 6. 執行層與 Taylor Core（codename: Brunel）整合
 
-### 6.1 已知的 Brunel 現況（截至 2026-09-08，Alpha 1 實作中）
+### 6.1 已知的 Taylor Core（Brunel repo）現況（截至 2026-09-08，Alpha 1 實作中）
 
 - **Brunel 為 Go 專案**（Windows x64、PowerShell 7、`CGO_ENABLED=0` 靜態編譯），非 Node.js。
 - 依 **ADR-002**，Brunel 把 model-facing agent runtime 委派給 **Pi**（`pi --mode rpc`）。Pi 需要 Node.js/npm 與 Git for Windows（Brunel 已文件化的安裝依賴）。
@@ -156,7 +159,7 @@ Taylor 側需持久化：Run lifecycle、runtime/tool event 摘要、failure rea
 - 憑證：僅 Windows Credential Manager，啟動 Pi 子行程時經環境變數注入並與 provider 綁定。
 - Provider/model 範圍 = 使用者當下安裝的 Pi 版本所支援的範圍，Brunel 不承諾特定清單。
 
-### 6.2 Taylor ↔ Brunel 拓撲 **[規範：分層；待 Gate 1：介面細節]**
+### 6.2 Taylor Agent ↔ Taylor Core 拓撲 **[規範：分層；待 Gate 1：介面細節]**
 
 ```
 Wails WebView（UI；不直接持有 filesystem / process / credential / network 權限）
@@ -176,9 +179,9 @@ worktree / 授權工具
 - 子行程樹以 **Windows Job Object** 綁定，確保 Cancel、Go 服務 crash 或 App 關閉時可清理整棵行程樹（Brunel 已具備 PowerShell Job Object 執行器；Taylor 端對 `brunel.exe` 的 Job Object 包裹 [待 Gate 1] 驗證）。
 - 重開 App 時對 journal 做 reconcile；無 runtime identity 的 `Running` 標為 `Interrupted`。
 
-### 6.3 §14 Brunel 的定位 **[規範]**
+### 6.3 §14 Taylor Core 的定位 **[規範]**
 
-Brunel 為 Taylor V1 的**首選 execution adapter，須通過整合原型（Gate 1）**，而非無條件固定依賴。Taylor 只依賴自己定義的 adapter contract；Brunel 能否滿足該契約是 Gate 1 的結論。Gate 1 的 policy hook 或最小 Run lifecycle 不成立 → V1 的自主 Run 閉環**不得動工**，回到閘前重新收斂，**不得自製完整 tool runtime**。其餘不支援項 → 對應功能從 V1 移除或以已說明的降級語意取代。
+Taylor Core（codename: Brunel）為 Taylor V1 的**首選 execution adapter，須通過整合原型（Gate 1）**，而非無條件固定依賴。Taylor 只依賴自己定義的 adapter contract；Taylor Core 能否滿足該契約是 Gate 1 的結論。Gate 1 的 policy hook 或最小 Run lifecycle 不成立 → V1 的自主 Run 閉環**不得動工**，回到閘前重新收斂，**不得自製完整 tool runtime**。其餘不支援項 → 對應功能從 V1 移除或以已說明的降級語意取代。
 
 ### 6.4 Node/Pi 的打包與 containment **[規範（修正 B）/ 待 Gate 1]**
 
@@ -350,13 +353,19 @@ steering 訊息顯示「**已送出，將於安全點套用**」狀態，**不**
 
 > **[待 PO：線框圖]** Product Owner 尚未開始 wireframes。本章只定義**互動約束與必須可見的狀態**（來自圓桌），不含畫面佈局、元件擺放或視覺稿。這些將在 wireframe 階段補上，並受 §12 門檻約束。
 
-### 13.1 視覺語言：Palladio **[規範方向]**
+### 13.1 視覺語言：shadcn/ui + Radix **[規範：技術棧]** ／ **[規範方向：視覺語言與數值]**
 
-- Taylor Agent V1 採用 **Palladio Design Language System** 作為視覺語言與 design-token 來源。
-- 取用方式：`palladio/dist/css/palladio.css`（CSS custom properties）或 `palladio/dist/ts/tokens.ts`；AI 代理參考 `palladio/dist/agent-reference.md`。
-- 約束：semantic token only；accent 色由 Taylor 明確提供並驗證對比（系統不推導色值）；支援 Compact／Default／Spacious 三密度與 reduced-motion。
-- **現況**：Palladio Foundation（token 系統）已完成；**元件庫仍在進行中**。Taylor 取得的是 token，需在其上自建元件，不可假設有完整 UI kit。
-- 可及性：遵循 Palladio 可及性契約（A-M1–A-M6）。
+- **決策**：Taylor Agent V1 改採 **shadcn/ui 元件原始碼 + Radix Primitives** 作為前端元件與互動基礎，取代原訂的 Palladio Design Language System；原因為 Palladio 專案端另有狀況，暫緩其作為依賴來源。本切換已由 Product Owner 拍板。**[規範]**
+- **技術棧含意（一併凍結，不得日後默默補上）**：Radix Primitives 為 React-only，無 vanilla binding；選 Radix 即等於選 React。前端技術棧因此確定為 **React + Tailwind CSS**，與本文件 §14「桌面框架：Wails v2」共同構成前端層。shadcn/ui 元件以 CLI 複製原始碼進 repo，**不是** npm 套件，上游修正（含可及性修正）不會自動流入。**[規範]**
+- **§12 門檻判定**：本次切換是替換既有保留項（視覺語言／元件實作來源），未新增可觀察功能或子系統、未新增使用者可見能力，因此**不適用** §12 的九判準與 PO ADR 例外流程；此判定寫入本條，避免日後被誤套用 §12 卡關。**[規範]**
+- **效能立場**：在 Wails v2 + WebView2、Task Board + 少量 Dialog、並行上限=1 的規模下，React+shadcn/Radix 與其他前端路線（Web Components／Zag.js 等 headless 方案）的 runtime 開銷差距對桌面體感而言是雜訊；真正決定體感的是事件批次／節流與 WebView2 本身的行程啟動成本（見 §14 效能目標與渲染紀律）。**不**因效能理由改選無框架路線。**[規範]**
+- **semantic-only token**：延續原則，shadcn/ui 啟用 `cssVariables: true`，產品程式碼不得直接寫死色值，只能用語意 CSS 變數（background／foreground／primary／muted／destructive／border／ring 等）。與 Palladio 不同，這條原本是 build-time validator 硬擋，改為**審查慣例 + lint 規則**（機制待補，見附錄 B）。**[規範方向]**
+- **accent 色**：延續原則，accent 由 Taylor 明確提供並驗證對比，系統不推導色值。原 Palladio 的 `validateAccentPairs()` 機制不隨切換帶過來，需 Taylor 自建對比驗證工具（待補，見附錄 B）。**[規範方向]**
+- **三密度 Compact／Default／Spacious**：shadcn/Tailwind 預設無 density 概念（尺寸為元件級硬編）。延續「換 density 不改元件結構」的原契約，機制改為 `data-density` + CSS 變數覆寫 theme 值（待補，見附錄 B），不得退化為每元件寫 size variant。**[規範方向]**
+- **reduced-motion**：Radix 本身無內建 `prefers-reduced-motion` 機制（上游已知缺口）。需 Taylor 自建全域 override，保留原硬規則：transform 類動效完全移除、必要處以 opacity 瞬時切換取代。**[規範方向]**
+- **可及性契約 A-M1–A-M6**：編號與內容維持 Palladio 契約原值不變（文字對比 4.5:1、UI／大字對比 3:1、可見 focus indicator、非必要動效可關閉、狀態不只靠顏色傳達、三密度最小互動尺寸 32／36／48px）。**驗證方式**由 Palladio 官方 validator／CLI 改為 **Taylor 自建**（工具待補，見附錄 B）；這是唯一被切換影響的欄位，不得順勢移除條文本身。**[規範方向]**
+- **Vendored 元件治理**：待補（見附錄 B）——存放位置、是否必經 PR 審查、radix-ui 版本是否 pin、CLI 重新生成是否會覆蓋本地修改。**[待 PO]**
+- **現況**：Palladio Foundation／元件庫進度與本專案無關（已不採用）。Taylor 需自行維護 vendored shadcn 元件與上述驗收機制，不可假設有完整、隨上游更新的 UI kit。
 
 ### 13.2 Task Board：三欄語意（固定，不擴充） **[規範]**
 
@@ -408,7 +417,8 @@ Task Card 版面與狀態徽章、Ask inline card 版面、Evidence 呈現格式
 | Worktree 適用範圍 | 僅「變更程式碼的 Run」建立專屬 worktree；唯讀分析／報告型 Run 可原地執行（明確 repository snapshot／working directory policy） | **[規範]** |
 | Git 依賴 | 是否要求系統預裝 Git、或安裝包自帶可攜式 Git | **[待 PO 凍結]** |
 | 打包 / 更新機制 | Wails 安裝包；Node/Pi 分發形式與更新 | **[待 Gate 1]**（見 §6.4） |
-| 效能目標 | 啟動時間、UI 回應延遲、Run 啟動延遲 | **[未提供]** |
+| 效能目標 | 冷啟動（主視窗首次繪出）p95 ≤ 2.5s；首次可互動（Task Board 可操作）p95 ≤ 3.5s；單次 UI 狀態更新（事件→畫面）p95 ≤ 100ms；idle CPU ≤ 2%；常駐 RSS（WebView2 UI process + Go host，不含 Run 子行程）≤ 300MB。數字為初版提案，需於 Gate 1 以 Wails v2 實際打包版本量測 WebView2 行程啟動地板後校正——WebView2 為多行程架構，啟動期已知有遙測請求可能造成的固定開銷，若地板已超出預算，問題在 Wails/WebView2 host，不在前端框架選型 | **[規範方向]** ／ **[待 Gate 1 驗證校正]** |
+| 渲染紀律 | Go journal → WebView 事件推送須批次／節流，避免逐筆事件觸發整板重繪；同一幀內到達的多筆事件合併為單次 reconciliation；長歷史清單需虛擬化。此為達成上列效能目標的主要手段，優先權高於前端框架/函式庫選型（見 §13.1 效能立場） | **[規範方向]** |
 | 供應鏈 | 內嵌／依賴的 Node/Pi/Brunel 需固定版本 + hash／簽章驗證 + 受控更新 | **[待 Gate 1]** |
 
 ---
@@ -433,6 +443,7 @@ Task Card 版面與狀態徽章、Ask inline card 版面、Evidence 呈現格式
 - [ ] Evidence（§13.3）的 tests／build 欄位資料來源：Brunel／Pi 事件 vs Taylor 程式層驗證。
 - [ ] 可攜 Node distribution 與 child-process containment 策略（§6.4）。
 - [ ] Pi 版本釘選政策（對照 Brunel OQ-8）。
+- [ ] 量測 WebView2 冷啟動地板（行程啟動＋已知遙測請求開銷）與空板 Task Board 的 idle CPU／RSS，校正 §14 效能目標數字。
 
 **失敗處置：** policy hook 或最小 Run lifecycle 不成立 → 閘前重新收斂；其餘不支援項 → 從 V1 移除或以已說明的降級語意取代。**任何情況下不得為通過閘門而自製完整 tool runtime。**
 
@@ -465,7 +476,7 @@ Task Card 版面與狀態徽章、Ask inline card 版面、Evidence 呈現格式
 11. Audit journal 保留期限、是否含可能含秘密的工具輸出。**[待 PO 凍結]**
 12. 同一 workspace 多 Session 並發寫入要警告還是硬擋？**[待 PO 凍結]**（V1 建議：至少偵測／警告）
 13. 資源治理的 CPU／記憶體上限數值。**[待 PO 凍結]**
-14. 效能目標（啟動時間、UI 延遲、Run 啟動延遲）。**[未提供]**
+14. 效能目標數字（§14）已提案凍結初版，待 Gate 1 以實際 Wails v2 打包版本驗證校正（含 WebView2 行程啟動地板量測）。**[待 Gate 1]**
 15. Gate 1 稽核的 time-box 上限與由誰簽核通過。**[待 PO 凍結]**
 16. Gate 1／Gate 2 的實際排程與 Brunel Alpha 進度的相依（Brunel 尚未接上閉環，Gate 1 需 Brunel 到可測狀態）。**[未提供]**
 
@@ -486,6 +497,8 @@ Task Card 版面與狀態徽章、Ask inline card 版面、Evidence 呈現格式
 | R9 | Gate 延遲拖累動工；需求探測樣本偏差 | 兩閘並行、time-box；缺證據採較小預設 | 可能砍掉其實有價值的 One-time／N>1（比先建出不可控能力可逆） |
 | R10 | 「Missed — 重新排程？」等新 UI 狀態流在規格未定稿時被實作期即興發明 | missed-trigger 卡片呈現語意隨 §8.1 十條一併凍結 | wireframe 未開始前，UI 狀態語意仍有懸置 |
 | R11 | Steering 曖昧稽核（部分支援）造成納入壓力 | §9.2 全有或全無判定，曖昧 = 未通過 | 若判 V2-y，差異化能力延後一版 |
+| R12 | Vendored shadcn 元件不隨上游自動更新（含 a11y 修正），版本與治理規則未定 | 附錄 B 待辦：定義存放位置／PR 審查／radix-ui 版本 pin／CLI 重生成保護 | 治理規則未落地前，重修會沒有基準 |
+| R13 | 事件推送未批次節流 → 渲染卡頓，被誤歸因於前端框架選型 | §14 渲染紀律列為規範方向；效能問題先查事件管線，再查框架 | 若並行上限日後放寬（N>1），批次策略需重新驗證 |
 
 ---
 
@@ -518,8 +531,8 @@ Task Card 版面與狀態徽章、Ask inline card 版面、Evidence 呈現格式
 | §28 | 三欄心智模型 | 納入且固定（§13.2） |
 | §29 | 移除清單 | 沿用（§4.3） |
 | §30 | 保留但延後 | 沿用（§4.2） |
-| §31 | Windows 桌面端、Wails/Electron | **Wails v2**（Chair 裁定，§14）；Palladio 為設計語言（§13.1）；wireframe 未開始 |
-| §32 | 原專案關係、Brunel repo | 另開新專案（本 repo）；Brunel 現況見 §6.1 |
+| §31 | Windows 桌面端、Wails/Electron | **Wails v2**（Chair 裁定，§14）；**React + shadcn/ui + Radix** 為前端技術棧與元件來源（§13.1，取代原 Palladio 方案；Radix 為 React-only，故一併凍結前端框架）；wireframe 未開始 |
+| §32 | 原專案關係、Brunel repo | 另開新專案（本 repo，相對於 Legacy Taylor／Taylor-Kanban `bext1998/Taylor-Kanban`，非程式碼直接重構）；Taylor Core（codename: Brunel）現況見 §6.1 |
 | §33 | 最終核心架構 | 以 §4–§14 收斂版取代；軟標籤「建議保留」項按 §4.2 延後 |
 | §34 | Feature Freeze 判斷規則 | 升級為強制門檻（§12） |
 
@@ -534,4 +547,9 @@ Task Card 版面與狀態徽章、Ask inline card 版面、Evidence 呈現格式
 5. [執行] 撰寫 Gate 2 需求探測問卷（§15.2；One-time 與 Recurring 分開問）。
 6. [執行] 定義 §12 的 PR 審查機制（每個保留項附使用流程 + 九判準對應 + 替代方案 + PO 裁定）。
 7. [待 Brunel] Gate 1 需等 Brunel 接上閉環（issue #4）到可測狀態。
-8. [後續] wireframe 階段補 §13.6 清單，逐項過 §12 門檻。
+8. [執行] 補齊 shadcn/ui + Radix 下遺失的機制：`data-density` + CSS 變數覆寫（三密度）、reduced-motion 全域 override、accent 對比驗證工具、Tailwind 裸色階禁用 lint 規則（§13.1）。
+9. [執行] 定義 vendored shadcn 元件治理規則：存放位置、PR 審查是否必經、radix-ui 版本 pin 策略、CLI 重新生成的本地修改保護（§13.1）。
+10. [執行] 設計 Go journal → WebView 事件批次／節流機制，作為 §14 效能目標與渲染紀律的實作手段。
+11. [待 PO 凍結] §14 效能目標數字（本次提案的初版），於 Gate 1 量測 WebView2 啟動地板後校正確認。
+12. [待辦] 通知 Palladio 專案：Taylor 已不再是其 first-party 消費端，避免對岸文件（DECISIONS.md／驗證策略）繼續引用一個已離開的消費者。
+13. [後續] wireframe 階段補 §13.6 清單，逐項過 §12 門檻。
